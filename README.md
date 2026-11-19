@@ -1,6 +1,6 @@
 # Khun Phaen
 
-A wooden sliding-block puzzle for a phone. Help the crowned block with the red dot — Khun Phaen — slip out through the sunny gap at the bottom of the tray.
+A wooden sliding-block puzzle for a phone. Help the crowned block with the white dot — Khun Phaen — slip out through the sunny gap at the bottom of the tray.
 
 ## How to play
 
@@ -17,19 +17,19 @@ The tray is the one in the photo: four columns, five rows, and a gap in the rail
 
 The photograph is the wooden Khun Phaen / Klotski tray: a 4×5 board, ten blocks (one 2×2, five 1×2, four 1×1) and two empty cells. The gap in the near rail is two cells wide, in the middle.
 
-The picture is taken at an angle, so a few middle seams are softer than the front row. The front row is clear: a wide block on the left and two small squares on the right, not the textbook row of four small squares. The big red square sits at the far end. Reading the blocks that way gives this start (the near edge, with the exit, is the bottom row):
+A closer look at the photo fixes the piece sizes. The big square, with the white dot, sits at the far left. Four tall red blocks, one wide red block and four small blue squares fill the rest. The left-hand blue square sits in the row just above the wide block, with an empty cell above it. The near edge, with the exit, is the bottom row:
 
 ```
-o H H V
-V H H V
-V = = V
-o . . V
+H H V .
+H H V o
+. V V V
+o V V V
 = = o o
 ```
 
-`H` is Khun Phaen, `V` a tall block, `=` a wide block, `o` a small square, `.` an empty cell.
+`H` is Khun Phaen (white dot), `V` a tall red block, `=` the wide red block, `o` a small blue square, `.` an empty cell.
 
-A breadth-first search of straight slides (one gesture, any distance, no corner in the same move) solves this position in **75 moves**. The same search reproduces the published 90-move straight-slide optimum for classic Klotski, which is the check that the rules are counting the way Klotski does.
+A breadth-first search of straight slides (one gesture, any distance, no corner in the same move) solves this position in **78 moves**. The same search reproduces the published 90-move straight-slide optimum for classic Klotski, which is the check that the rules are counting the way Klotski does.
 
 ## Tests
 

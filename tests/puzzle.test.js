@@ -22,10 +22,10 @@ import {
 } from "../js/puzzle.js";
 
 const INITIAL_GRID = [
-  "o H H V",
-  "V H H V",
-  "V = = V",
-  "o . . V",
+  "H H V .",
+  "H H V o",
+  ". V V V",
+  "o V V V",
   "= = o o",
 ].join("\n");
 
@@ -60,7 +60,28 @@ test("the photo layout is a full tray with no overlaps", () => {
   const hero = findPiece(pieces, "hero");
   assert.equal(hero.w, 2);
   assert.equal(hero.h, 2);
-  assert.equal(hero.dot, "red");
+  assert.equal(hero.dot, "white");
+  assert.deepEqual([hero.col, hero.row], [0, 0]);
+  for (const id of ["v-a", "v-b", "v-c", "v-d", "h-front"]) {
+    assert.equal(findPiece(pieces, id).dot, "red");
+  }
+  for (const id of ["s-blue-top", "s-blue-left", "s-blue-mid", "s-blue-right"]) {
+    assert.equal(findPiece(pieces, id).dot, "blue");
+  }
+  assert.deepEqual(
+    ["v-a", "v-b", "v-c", "v-d"].map((id) => {
+      const piece = findPiece(pieces, id);
+      return [piece.col, piece.row];
+    }),
+    [[2, 0], [1, 2], [2, 2], [3, 2]],
+  );
+  assert.deepEqual(
+    ["s-blue-top", "s-blue-left", "s-blue-mid", "s-blue-right"].map((id) => {
+      const piece = findPiece(pieces, id);
+      return [piece.col, piece.row];
+    }),
+    [[3, 1], [0, 3], [2, 4], [3, 4]],
+  );
 });
 
 test("blocks slide only through empty cells in a straight line", () => {
@@ -68,24 +89,20 @@ test("blocks slide only through empty cells in a straight line", () => {
   const heroSlides = legalSlides(pieces, "hero");
   assert.deepEqual(heroSlides, []);
 
-  const bar = legalSlides(pieces, "h-mid");
+  const leftBlue = legalSlides(pieces, "s-blue-left");
   assert.deepEqual(
-    bar.map((slide) => [slide.col, slide.row, slide.steps]),
-    [[1, 3, 1]],
+    leftBlue.map((slide) => [slide.col, slide.row, slide.steps]),
+    [[0, 2, 1]],
   );
 
-  const blue = legalSlides(pieces, "s-blue-left");
+  const topBlue = legalSlides(pieces, "s-blue-top");
   assert.deepEqual(
-    blue.map((slide) => [slide.col, slide.row, slide.steps]).sort(),
-    [
-      [1, 3, 1],
-      [2, 3, 2],
-    ].sort(),
+    topBlue.map((slide) => [slide.col, slide.row, slide.steps]),
+    [[3, 0, 1]],
   );
 
-  const front = legalSlides(pieces, "s-blue-mid");
-  assert.ok(front.some((slide) => slide.col === 2 && slide.row === 3 && slide.steps === 1));
-  assert.equal(front.some((slide) => slide.row === 4 && slide.col !== 2), false);
+  assert.deepEqual(legalSlides(pieces, "h-front"), []);
+  assert.deepEqual(legalSlides(pieces, "v-b"), []);
 });
 
 test("a block cannot jump a neighbour or leave the tray", () => {
@@ -107,32 +124,37 @@ test("a block cannot jump a neighbour or leave the tray", () => {
 });
 
 test("one gesture is one move, even when the block travels two cells", () => {
-  const first = performMove(createGame(), "s-blue-left", 2, 3);
+  const open = createGame([
+    { id: "runner", role: "small", w: 1, h: 1, col: 0, row: 0, dot: "blue" },
+    { id: "peg", role: "small", w: 1, h: 1, col: 0, row: 2, dot: "red" },
+  ]);
+  const first = performMove(open, "runner", 2, 0);
   assert.equal(first.moved, true);
   assert.equal(first.state.moves, 1);
   assert.equal(first.state.won, false);
-  assert.equal(findPiece(first.state.pieces, "s-blue-left").col, 2);
-  assert.equal(findPiece(first.state.pieces, "s-blue-left").row, 3);
+  assert.equal(findPiece(first.state.pieces, "runner").col, 2);
 
-  const illegal = performMove(createGame(), "s-blue-left", 3, 3);
+  const photo = performMove(createGame(), "s-blue-left", 0, 2);
+  assert.equal(photo.moved, true);
+  assert.equal(photo.state.moves, 1);
+  assert.equal(findPiece(photo.state.pieces, "s-blue-left").row, 2);
+
+  const illegal = performMove(createGame(), "s-blue-left", 1, 2);
   assert.equal(illegal.moved, false);
   assert.equal(illegal.state.moves, 0);
   assert.equal(renderGrid(illegal.state.pieces), INITIAL_GRID);
-
-  const diagonal = performMove(createGame(), "s-blue-left", 1, 4);
-  assert.equal(diagonal.moved, false);
 });
 
 test("undo puts the block and the counter back", () => {
   let game = createGame();
-  game = performMove(game, "h-mid", 1, 3).state;
-  game = performMove(game, "hero", 1, 1).state;
+  game = performMove(game, "s-blue-left", 0, 2).state;
+  game = performMove(game, "s-blue-top", 3, 0).state;
   assert.equal(game.moves, 2);
 
   game = undoMove(game);
   assert.equal(game.moves, 1);
-  assert.equal(findPiece(game.pieces, "hero").row, 0);
-  assert.equal(findPiece(game.pieces, "h-mid").row, 3);
+  assert.equal(findPiece(game.pieces, "s-blue-top").row, 1);
+  assert.equal(findPiece(game.pieces, "s-blue-left").row, 2);
 
   game = undoMove(game);
   assert.equal(game.moves, 0);
@@ -203,12 +225,12 @@ test("classic Klotski solves in 90 straight slides", { timeout: 20_000 }, () => 
   }
 });
 
-test("the photo layout solves in 75 straight slides", { timeout: 20_000 }, () => {
+test("the photo layout solves in 78 straight slides", { timeout: 20_000 }, () => {
   const pieces = createInitialPieces();
   const result = solve(pieces);
   assert.ok(result);
-  assert.equal(result.moveCount, 75);
-  assert.equal(result.moves.length, 75);
+  assert.equal(result.moveCount, 78);
+  assert.equal(result.moves.length, 78);
   let current = pieces;
   for (let i = 0; i < result.moves.length; i += 1) {
     const move = result.moves[i];

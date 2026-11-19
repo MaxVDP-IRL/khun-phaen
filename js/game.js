@@ -7,7 +7,8 @@ import {
   undoMove,
 } from "./puzzle.js";
 
-const BEST_KEY = "khun-phaen-best";
+// v2: the hero is the white 2×2 from the photo, so an old red-hero score does not carry over.
+const BEST_KEY = "khun-phaen-best-v2";
 const SOUND_KEY = "khun-phaen-sound";
 
 const tray = document.getElementById("tray");
