@@ -58,6 +58,7 @@ export function createGame(pieces = createInitialPieces()) {
     moves: 0,
     history: [],
     won: false,
+    hints: 0,
   };
 }
 
@@ -197,6 +198,7 @@ export function performMove(state, id, col, row) {
       { pieces: state.pieces, moves: state.moves },
     ]),
     won: isWin(pieces),
+    hints: state.hints ?? 0,
   };
   return { state: next, moved: true };
 }
@@ -212,6 +214,43 @@ export function undoMove(state) {
     moves: previous.moves,
     history: state.history.slice(0, -1),
     won: false,
+    hints: state.hints ?? 0,
+  };
+}
+
+/**
+ * A shown hint. Undo does not call this in reverse.
+ * @param {GameState} state
+ */
+export function addHint(state) {
+  return { ...state, hints: (state.hints ?? 0) + 1 };
+}
+
+/**
+ * Clean best is only games played with no hints. A hinted win updates
+ * the separate hinted best and leaves the clean best alone.
+ * @param {number} moves
+ * @param {number} hintsUsed
+ * @param {{ clean: number | null, hinted: number | null }} bests
+ */
+export function recordWin(moves, hintsUsed, bests) {
+  const clean = bests.clean ?? null;
+  const hinted = bests.hinted ?? null;
+  if (hintsUsed > 0) {
+    const improved = hinted == null || moves < hinted;
+    return {
+      clean,
+      hinted: improved ? moves : hinted,
+      improvedClean: false,
+      improvedHinted: improved,
+    };
+  }
+  const improved = clean == null || moves < clean;
+  return {
+    clean: improved ? moves : clean,
+    hinted,
+    improvedClean: improved,
+    improvedHinted: false,
   };
 }
 
@@ -334,4 +373,277 @@ export function coveredCells(pieces) {
     }
   }
   return cells;
+}
+
+const PIECE_W = [2, 1, 1, 1, 1, 2, 1, 1, 1, 1];
+const PIECE_H = [2, 2, 2, 2, 2, 1, 1, 1, 1, 1];
+const PIECE_AT = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18];
+const SLIDE_DIRS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
+/** @type {Map<string, number> | null} */
+let distanceMap = null;
+/** @type {{ states: number, buildMs: number } | null} */
+let distanceStats = null;
+
+/**
+ * @param {Uint8Array} buf
+ * @param {number} start
+ * @param {number} count
+ */
+function sortPairs(buf, start, count) {
+  for (let i = 1; i < count; i += 1) {
+    const col = buf[start + i * 2];
+    const row = buf[start + i * 2 + 1];
+    const rank = col * 5 + row;
+    let j = i - 1;
+    while (j >= 0 && buf[start + j * 2] * 5 + buf[start + j * 2 + 1] > rank) {
+      buf[start + (j + 1) * 2] = buf[start + j * 2];
+      buf[start + (j + 1) * 2 + 1] = buf[start + j * 2 + 1];
+      j -= 1;
+    }
+    buf[start + (j + 1) * 2] = col;
+    buf[start + (j + 1) * 2 + 1] = row;
+  }
+}
+
+/**
+ * @param {Uint8Array} buf
+ */
+function canonState(buf) {
+  sortPairs(buf, 2, 4);
+  sortPairs(buf, 12, 4);
+}
+
+/**
+ * @param {Uint8Array} buf
+ */
+function keyState(buf) {
+  let key = "";
+  for (let i = 0; i < 20; i += 1) key += buf[i];
+  return key;
+}
+
+/**
+ * @param {Piece[]} pieces
+ */
+function packPieces(pieces) {
+  const buf = new Uint8Array(20);
+  const hero = pieces.find((piece) => piece.role === "hero");
+  const horiz = pieces.find((piece) => piece.role === "horiz");
+  const verts = pieces.filter((piece) => piece.role === "vert");
+  const smalls = pieces.filter((piece) => piece.role === "small");
+  if (!hero || !horiz || verts.length !== 4 || smalls.length !== 4) return null;
+  buf[0] = hero.col;
+  buf[1] = hero.row;
+  verts.forEach((piece, index) => {
+    buf[2 + index * 2] = piece.col;
+    buf[3 + index * 2] = piece.row;
+  });
+  buf[10] = horiz.col;
+  buf[11] = horiz.row;
+  smalls.forEach((piece, index) => {
+    buf[12 + index * 2] = piece.col;
+    buf[13 + index * 2] = piece.row;
+  });
+  canonState(buf);
+  return buf;
+}
+
+/**
+ * @param {Uint8Array} buf
+ * @param {Uint8Array} grid
+ */
+function fillGrid(buf, grid) {
+  grid.fill(0);
+  for (let piece = 0; piece < 10; piece += 1) stampPiece(buf, grid, piece, 1);
+}
+
+/**
+ * @param {Uint8Array} buf
+ * @param {Uint8Array} grid
+ * @param {number} piece
+ * @param {number} value
+ */
+function stampPiece(buf, grid, piece, value) {
+  const at = PIECE_AT[piece];
+  const col = buf[at];
+  const row = buf[at + 1];
+  const w = PIECE_W[piece];
+  const h = PIECE_H[piece];
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) grid[(row + y) * 4 + (col + x)] = value;
+  }
+}
+
+/**
+ * @param {Uint8Array} grid
+ * @param {number} w
+ * @param {number} h
+ * @param {number} col
+ * @param {number} row
+ */
+function cellFree(grid, w, h, col, row) {
+  if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (grid[(row + y) * 4 + (col + x)]) return false;
+    }
+  }
+  return true;
+}
+
+const scratchState = new Uint8Array(20);
+
+/**
+ * @param {Uint8Array} buf
+ * @param {Uint8Array} grid
+ * @param {(key: string) => void} visit
+ */
+function eachNeighbor(buf, grid, visit) {
+  fillGrid(buf, grid);
+  for (let piece = 0; piece < 10; piece += 1) {
+    stampPiece(buf, grid, piece, 0);
+    const at = PIECE_AT[piece];
+    const col = buf[at];
+    const row = buf[at + 1];
+    const w = PIECE_W[piece];
+    const h = PIECE_H[piece];
+    for (let dir = 0; dir < 4; dir += 1) {
+      const dc = SLIDE_DIRS[dir][0];
+      const dr = SLIDE_DIRS[dir][1];
+      let steps = 1;
+      while (cellFree(grid, w, h, col + dc * steps, row + dr * steps)) {
+        scratchState.set(buf);
+        scratchState[at] = col + dc * steps;
+        scratchState[at + 1] = row + dr * steps;
+        canonState(scratchState);
+        visit(keyState(scratchState));
+        steps += 1;
+      }
+    }
+    stampPiece(buf, grid, piece, 1);
+  }
+}
+
+/**
+ * Distances from every position reachable in this puzzle to the nearest win.
+ * Built once and reused for every hint.
+ */
+export function warmDistanceMap() {
+  if (distanceMap) return distanceStats;
+  const started = performance.now();
+  const start = packPieces(createInitialPieces());
+  if (!start) return null;
+  const grid = new Uint8Array(20);
+  /** @type {Uint8Array[]} */
+  const states = [start];
+  const indexOf = new Map([[keyState(start), 0]]);
+  /** @type {number[][]} */
+  const neighbors = [[]];
+  /** @type {number[]} */
+  const goals = [];
+  if (start[0] === EXIT_COL && start[1] === EXIT_ROW) goals.push(0);
+  const queue = [0];
+  let head = 0;
+  while (head < queue.length) {
+    const index = queue[head];
+    head += 1;
+    const current = states[index];
+    eachNeighbor(current, grid, (key) => {
+      let neighbor = indexOf.get(key);
+      if (neighbor == null) {
+        neighbor = states.length;
+        states.push(scratchState.slice());
+        indexOf.set(key, neighbor);
+        neighbors.push([]);
+        queue.push(neighbor);
+        if (scratchState[0] === EXIT_COL && scratchState[1] === EXIT_ROW) goals.push(neighbor);
+      }
+      neighbors[index].push(neighbor);
+    });
+  }
+
+  const distance = new Int16Array(states.length);
+  distance.fill(-1);
+  const back = [];
+  for (const goal of goals) {
+    distance[goal] = 0;
+    back.push(goal);
+  }
+  head = 0;
+  while (head < back.length) {
+    const index = back[head];
+    head += 1;
+    const nextDistance = distance[index] + 1;
+    const linked = neighbors[index];
+    for (let i = 0; i < linked.length; i += 1) {
+      const neighbor = linked[i];
+      if (distance[neighbor] >= 0) continue;
+      distance[neighbor] = nextDistance;
+      back.push(neighbor);
+    }
+  }
+
+  distanceMap = new Map();
+  for (let i = 0; i < states.length; i += 1) {
+    if (distance[i] >= 0) distanceMap.set(keyState(states[i]), distance[i]);
+  }
+  distanceStats = { states: distanceMap.size, buildMs: performance.now() - started };
+  return distanceStats;
+}
+
+/**
+ * @param {Piece[]} pieces
+ * @returns {number | null}
+ */
+export function distanceToGoal(pieces) {
+  warmDistanceMap();
+  const packed = packPieces(pieces);
+  if (!packed || !distanceMap) return null;
+  const distance = distanceMap.get(keyState(packed));
+  return distance == null ? null : distance;
+}
+
+/**
+ * The next slide on a shortest path from this board to the exit.
+ * @param {Piece[]} pieces
+ * @returns {{ status: "ok", id: string, col: number, row: number, fromCol: number, fromRow: number, distance: number } | { status: "solved" } | { status: "none" }}
+ */
+export function hintMove(pieces) {
+  if (isWin(pieces)) return { status: "solved" };
+  const distance = distanceToGoal(pieces);
+  if (distance == null) return { status: "none" };
+  let best = null;
+  for (const piece of pieces) {
+    const slides = legalSlides(pieces, piece.id);
+    for (const slide of slides) {
+      const next = applySlide(pieces, piece.id, slide.col, slide.row);
+      const nextDistance = distanceToGoal(next);
+      if (nextDistance == null) continue;
+      if (!best || nextDistance < best.distance) {
+        best = {
+          status: "ok",
+          id: piece.id,
+          col: slide.col,
+          row: slide.row,
+          fromCol: piece.col,
+          fromRow: piece.row,
+          distance: nextDistance,
+        };
+      }
+    }
+  }
+  return best ?? { status: "none" };
+}
+
+/**
+ * @returns {{ states: number, buildMs: number } | null}
+ */
+export function distanceMapStats() {
+  return distanceStats;
 }

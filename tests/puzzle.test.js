@@ -5,16 +5,22 @@ import {
   EXIT_COL,
   EXIT_ROW,
   ROWS,
+  addHint,
   applySlide,
   coveredCells,
   createGame,
   createInitialPieces,
+  distanceMapStats,
+  distanceToGoal,
   findPiece,
   fits,
+  hintMove,
+  isLegalSlide,
   isWin,
   legalSlides,
   occupancy,
   performMove,
+  recordWin,
   renderGrid,
   replay,
   solve,
@@ -250,3 +256,88 @@ test("the photo layout solves in 78 straight slides", { timeout: 20_000 }, () =>
 function isLegal(pieces, id, col, row) {
   return legalSlides(pieces, id).some((slide) => slide.col === col && slide.row === row);
 }
+
+test("the opening hint is a legal step toward the exit", () => {
+  const pieces = createInitialPieces();
+  const before = distanceToGoal(pieces);
+  assert.equal(before, 78);
+  const hint = hintMove(pieces);
+  assert.equal(hint.status, "ok");
+  assert.equal(isLegalSlide(pieces, hint.id, hint.col, hint.row), true);
+  const next = applySlide(pieces, hint.id, hint.col, hint.row);
+  assert.equal(distanceToGoal(next), before - 1);
+  const stats = distanceMapStats();
+  assert.ok(stats.states > 1000);
+  const started = performance.now();
+  hintMove(pieces);
+  const lookupMs = performance.now() - started;
+  assert.ok(lookupMs < 20, `cached hint took ${lookupMs}ms`);
+});
+
+test("following hints solves mid-game boards in the BFS distance", () => {
+  const seeds = [3, 17, 42];
+  const walks = [8, 20, 35];
+  for (let caseIndex = 0; caseIndex < seeds.length; caseIndex += 1) {
+    let random = seeds[caseIndex];
+    const nextRand = () => {
+      random = (random * 1664525 + 1013904223) >>> 0;
+      return random;
+    };
+    let pieces = createInitialPieces();
+    for (let step = 0; step < walks[caseIndex] && !isWin(pieces); step += 1) {
+      const options = [];
+      for (const piece of pieces) {
+        for (const slide of legalSlides(pieces, piece.id)) {
+          options.push({ id: piece.id, col: slide.col, row: slide.row });
+        }
+      }
+      const choice = options[nextRand() % options.length];
+      pieces = applySlide(pieces, choice.id, choice.col, choice.row);
+    }
+    const distance = distanceToGoal(pieces);
+    assert.notEqual(distance, null);
+    let steps = 0;
+    while (!isWin(pieces)) {
+      const hint = hintMove(pieces);
+      assert.equal(hint.status, "ok");
+      assert.equal(isLegalSlide(pieces, hint.id, hint.col, hint.row), true);
+      const before = distanceToGoal(pieces);
+      pieces = applySlide(pieces, hint.id, hint.col, hint.row);
+      assert.equal(distanceToGoal(pieces), before - 1);
+      steps += 1;
+      assert.ok(steps <= distance);
+    }
+    assert.equal(steps, distance);
+  }
+});
+
+test("hints are counted apart from the no-hint best", () => {
+  let game = createGame();
+  assert.equal(game.hints, 0);
+  game = addHint(game);
+  game = performMove(game, "s-blue-left", 0, 2).state;
+  assert.equal(game.hints, 1);
+  assert.equal(game.moves, 1);
+  game = undoMove(game);
+  assert.equal(game.moves, 0);
+  assert.equal(game.hints, 1);
+  game = addHint(game);
+  assert.equal(game.hints, 2);
+  assert.equal(createGame().hints, 0);
+
+  let bests = recordWin(40, 0, { clean: null, hinted: null });
+  assert.deepEqual(
+    { clean: bests.clean, hinted: bests.hinted },
+    { clean: 40, hinted: null },
+  );
+  bests = recordWin(30, 2, bests);
+  assert.equal(bests.clean, 40);
+  assert.equal(bests.hinted, 30);
+  bests = recordWin(36, 1, bests);
+  assert.equal(bests.hinted, 30);
+  bests = recordWin(35, 0, bests);
+  assert.equal(bests.clean, 35);
+  assert.equal(bests.hinted, 30);
+  const solved = applySlide(createInitialPieces(), "hero", EXIT_COL, EXIT_ROW);
+  assert.equal(hintMove(solved).status, "solved");
+});

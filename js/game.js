@@ -1,14 +1,19 @@
 import {
   COLS,
+  addHint,
   createGame,
   createInitialPieces,
+  hintMove,
   legalSlides,
   performMove,
+  recordWin,
   undoMove,
+  warmDistanceMap,
 } from "./puzzle.js";
 
 // v2: the hero is the white 2×2 from the photo, so an old red-hero score does not carry over.
 const BEST_KEY = "khun-phaen-best-v2";
+const HINTED_BEST_KEY = "khun-phaen-best-hinted-v2";
 const SOUND_KEY = "khun-phaen-sound";
 
 const tray = document.getElementById("tray");
@@ -16,12 +21,17 @@ const board = document.getElementById("board");
 const moveCountEl = document.getElementById("move-count");
 const bestCountEl = document.getElementById("best-count");
 const bestWrap = document.getElementById("best");
+const hintCountEl = document.getElementById("hint-count");
+const hintBestEl = document.getElementById("hint-best-count");
+const hintBestWrap = document.getElementById("hint-best");
 const undoBtn = document.getElementById("undo");
 const restartBtn = document.getElementById("restart");
+const hintBtn = document.getElementById("hint");
 const soundBtn = document.getElementById("sound");
 const winLayer = document.getElementById("win");
 const winNum = document.getElementById("win-num");
 const winStar = document.getElementById("win-star");
+const winBulb = document.getElementById("win-bulb");
 const againBtn = document.getElementById("again");
 const confetti = document.getElementById("confetti");
 
@@ -36,6 +46,13 @@ let soundOn = false;
 /** @type {AudioContext | null} */
 let audioCtx = null;
 let winTimer = 0;
+let hintTimer = 0;
+const hintGhost = document.createElement("div");
+const hintArrow = document.createElement("div");
+hintGhost.className = "ghost";
+hintArrow.className = "hint-arrow";
+hintGhost.hidden = true;
+hintArrow.hidden = true;
 
 /** @type {null | {
  *   id: string,
@@ -61,27 +78,21 @@ function syncMotion() {
   document.documentElement.classList.toggle("reduce-motion", reduceMotion.matches);
 }
 
-function readBest() {
+function readStored(key) {
   try {
-    const value = Number(localStorage.getItem(BEST_KEY));
+    const value = Number(localStorage.getItem(key));
     return Number.isFinite(value) && value > 0 ? value : null;
   } catch {
     return null;
   }
 }
 
-function writeBest(moves) {
-  const previous = readBest();
-  const isNew = previous == null || moves < previous;
-  const best = isNew ? moves : previous;
-  if (isNew) {
-    try {
-      localStorage.setItem(BEST_KEY, String(moves));
-    } catch {
-      /* private mode */
-    }
+function writeStored(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* private mode */
   }
-  return { best, isNew };
 }
 
 function readSound() {
@@ -94,9 +105,13 @@ function readSound() {
 
 function paintHud() {
   moveCountEl.textContent = String(state.moves);
-  const best = readBest();
-  bestCountEl.textContent = best == null ? "–" : String(best);
-  bestWrap.classList.toggle("has-best", best != null);
+  hintCountEl.textContent = String(state.hints ?? 0);
+  const clean = readStored(BEST_KEY);
+  const hinted = readStored(HINTED_BEST_KEY);
+  bestCountEl.textContent = clean == null ? "–" : String(clean);
+  hintBestEl.textContent = hinted == null ? "–" : String(hinted);
+  bestWrap.classList.toggle("has-best", clean != null);
+  hintBestWrap.classList.toggle("has-best", hinted != null);
   undoBtn.disabled = state.history.length === 0 || state.won;
 }
 
@@ -175,6 +190,53 @@ function crownMarkup() {
   </svg>`;
 }
 
+function clearHint() {
+  clearTimeout(hintTimer);
+  hintTimer = 0;
+  hintGhost.hidden = true;
+  hintArrow.hidden = true;
+  for (const el of blocks.values()) el.classList.remove("hinting");
+}
+
+function showHintMark(hint) {
+  clearHint();
+  const el = blocks.get(hint.id);
+  const piece = state.pieces.find((item) => item.id === hint.id);
+  if (!el || !piece) return;
+  el.classList.add("hinting");
+  const box = pieceBox(hint.col, hint.row, piece.w, piece.h);
+  hintGhost.hidden = false;
+  hintGhost.style.left = `${box.left}px`;
+  hintGhost.style.top = `${box.top}px`;
+  hintGhost.style.width = `${box.width}px`;
+  hintGhost.style.height = `${box.height}px`;
+  hintGhost.style.borderRadius = `${Math.round(cell * 0.12)}px`;
+  const dcol = Math.sign(hint.col - hint.fromCol);
+  const drow = Math.sign(hint.row - hint.fromRow);
+  hintArrow.textContent = dcol > 0 ? "→" : dcol < 0 ? "←" : drow > 0 ? "↓" : "↑";
+  hintArrow.hidden = false;
+  const origin = pieceBox(piece.col, piece.row, piece.w, piece.h);
+  hintArrow.style.left = `${origin.left + origin.width / 2 + dcol * origin.width * 0.55}px`;
+  hintArrow.style.top = `${origin.top + origin.height / 2 + drow * origin.height * 0.55}px`;
+  hintTimer = window.setTimeout(clearHint, 4500);
+}
+
+function onHint() {
+  if (state.won) return;
+  const started = performance.now();
+  const hint = hintMove(state.pieces);
+  hintBtn.dataset.responseMs = String(performance.now() - started);
+  if (hint.status !== "ok") {
+    clearHint();
+    shake(hintBtn);
+    return;
+  }
+  state = addHint(state);
+  showHintMark(hint);
+  paintHud();
+  hintChime();
+}
+
 function buildBoard() {
   const tones = ["0", "1", "2"];
   createInitialPieces().forEach((piece, index) => {
@@ -199,6 +261,8 @@ function buildBoard() {
     board.appendChild(el);
     blocks.set(piece.id, el);
   });
+  board.appendChild(hintGhost);
+  board.appendChild(hintArrow);
 }
 
 function axisRange(id, originCol, originRow, axis) {
@@ -222,6 +286,7 @@ function axisRange(id, originCol, originRow, axis) {
 function onPointerDown(event) {
   if (state.won || drag) return;
   const el = event.target.closest(".block");
+  if (el) clearHint();
   if (!el || !board.contains(el)) return;
   event.preventDefault();
   const id = el.dataset.id;
@@ -315,6 +380,7 @@ function finishDrag(event) {
     const result = performMove(state, current.id, col, row);
     if (result.moved) {
       state = result.state;
+      clearHint();
       woodTick();
       placeAll(true);
       paintHud();
@@ -351,14 +417,21 @@ function beginEscape() {
 }
 
 function showWin() {
-  const { best, isNew } = writeBest(state.moves);
+  const result = recordWin(state.moves, state.hints ?? 0, {
+    clean: readStored(BEST_KEY),
+    hinted: readStored(HINTED_BEST_KEY),
+  });
+  if (result.improvedClean) writeStored(BEST_KEY, result.clean);
+  if (result.improvedHinted) writeStored(HINTED_BEST_KEY, result.hinted);
   paintHud();
   winNum.textContent = String(state.moves);
-  winStar.hidden = !isNew;
+  winStar.hidden = !result.improvedClean;
+  winBulb.hidden = !result.improvedHinted;
   winLayer.hidden = false;
   spawnConfetti();
   cheer();
-  if (isNew && !reduceMotion.matches) bestWrap.classList.add("pop");
+  if (result.improvedClean && !reduceMotion.matches) bestWrap.classList.add("pop");
+  if (result.improvedHinted && !reduceMotion.matches) hintBestWrap.classList.add("pop");
 }
 
 function hideWin() {
@@ -396,9 +469,11 @@ function spawnConfetti() {
 
 function resetGame() {
   clearTimeout(winTimer);
+  clearHint();
   drag = null;
   state = createGame();
   hideWin();
+  hintBestWrap.classList.remove("pop");
   for (const el of blocks.values()) {
     el.classList.remove("dragging", "escaping", "shake");
     el.style.opacity = "";
@@ -462,8 +537,18 @@ function setSound(on) {
   }
 }
 
+function hintChime() {
+  if (!soundOn) return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  tone(659.25, now, 0.14, "sine", 0.045);
+  tone(880, now + 0.09, 0.18, "sine", 0.035);
+}
+
 function onUndo() {
   if (state.won || state.history.length === 0) return;
+  clearHint();
   state = undoMove(state);
   placeAll(true);
   paintHud();
@@ -479,6 +564,7 @@ document.addEventListener("gesturestart", (event) => event.preventDefault());
 
 undoBtn.addEventListener("click", onUndo);
 restartBtn.addEventListener("click", resetGame);
+hintBtn.addEventListener("click", onHint);
 againBtn.addEventListener("click", resetGame);
 soundBtn.addEventListener("click", () => {
   const next = !soundOn;
@@ -501,3 +587,4 @@ soundOn = readSound();
 setSound(soundOn);
 layout(false);
 paintHud();
+setTimeout(() => warmDistanceMap(), 40);

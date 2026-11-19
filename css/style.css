@@ -56,11 +56,25 @@ button,
 
 .hud {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   min-height: 76px;
-  padding: 4px 8px 0;
-  gap: 12px;
+  padding: 4px 6px 0;
+  gap: 8px;
+}
+
+.score-row,
+.bests {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.bests {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  margin-bottom: 4px;
 }
 
 .moves,
@@ -71,7 +85,7 @@ button,
 }
 
 .move-count {
-  font-size: clamp(56px, 18vw, 88px);
+  font-size: clamp(48px, 15vw, 76px);
   line-height: 0.9;
   font-weight: 800;
   letter-spacing: -0.04em;
@@ -84,13 +98,40 @@ button,
 }
 
 .best {
-  gap: 6px;
-  min-width: 72px;
+  gap: 4px;
+  min-width: 64px;
   justify-content: flex-end;
-  font-size: clamp(28px, 8vw, 40px);
+  font-size: clamp(22px, 6vw, 30px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
+}
+
+.used-hints {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 8px;
+  font-size: clamp(22px, 6vw, 30px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.bulb {
+  width: 0.9em;
+  height: 0.9em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hint-best.has-best .bulb,
+.used-hints .bulb {
+  fill: #f6c445;
+  stroke: #a86b10;
 }
 
 .star {
@@ -259,6 +300,35 @@ button,
 
 .block.no-slide { transition: none; }
 
+.block.hinting {
+  z-index: 7;
+  animation: hint-pulse 1.05s ease-in-out infinite;
+}
+
+.ghost {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 3px dashed #e2a82a;
+  background: rgba(246, 196, 69, 0.34);
+  pointer-events: none;
+}
+
+.ghost[hidden] { display: none; }
+
+.hint-arrow {
+  position: absolute;
+  z-index: 8;
+  transform: translate(-50%, -50%);
+  font-size: 34px;
+  line-height: 1;
+  color: #a86b10;
+  text-shadow: 0 2px 0 rgba(255, 248, 230, 0.9);
+  pointer-events: none;
+}
+
+.hint-arrow[hidden] { display: none; }
+
 .block.escaping {
   z-index: 25;
   transition:
@@ -344,8 +414,8 @@ button,
 }
 
 .controls button {
-  width: 72px;
-  height: 72px;
+  width: 60px;
+  height: 60px;
   border: 0;
   border-radius: 50%;
   padding: 0;
@@ -362,8 +432,8 @@ button,
 }
 
 .controls button svg {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.4;
@@ -387,6 +457,35 @@ button,
 #again:focus-visible {
   outline: 3px solid #e6a23c;
   outline-offset: 3px;
+}
+
+#hint {
+  width: 76px;
+  height: 76px;
+  color: #5a3018;
+  background: linear-gradient(180deg, #ffe58a, #f0c14d 55%, #e2a82a);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 4px 0 #c48a12,
+    0 8px 14px rgba(120, 70, 10, 0.22);
+}
+
+#hint svg {
+  width: 40px;
+  height: 40px;
+  fill: #fff6cc;
+  stroke: #8a5a12;
+}
+
+#hint:active:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 0 #c48a12;
+}
+
+@media (min-width: 390px) {
+  .controls button { width: 66px; height: 66px; }
+  #hint { width: 82px; height: 82px; }
 }
 
 #sound .icon-on { display: none; }
@@ -489,7 +588,14 @@ button,
   text-shadow: 0 2px 0 #c48a12;
 }
 
-.win-star[hidden] { display: none; }
+.win-star[hidden],
+.win-bulb[hidden] { display: none; }
+
+.win-bulb {
+  margin: 0 0 8px;
+  font-size: 36px;
+  line-height: 1;
+}
 
 #again {
   margin-top: 8px;
@@ -531,6 +637,20 @@ button,
     0 1px 0 #c48a12;
 }
 
+@keyframes hint-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px rgba(226, 168, 42, 0.55),
+      0 7px 8px rgba(70, 35, 10, 0.28);
+  }
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(246, 196, 69, 0.12),
+      0 0 16px 3px rgba(240, 193, 77, 0.9),
+      0 7px 8px rgba(70, 35, 10, 0.28);
+  }
+}
+
 @keyframes bump {
   50% { transform: scale(1.14); }
 }
@@ -546,7 +666,8 @@ button,
   70% { transform: translateX(5px) rotate(1.5deg); }
 }
 
-.block.shake { animation: shake 180ms ease; }
+.block.shake,
+#hint.shake { animation: shake 180ms ease; }
 
 @keyframes burst {
   0% { transform: translate(0, 0) scale(0.3) rotate(0); opacity: 0; }
@@ -558,6 +679,8 @@ button,
   from { transform: scale(0.72); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+
+.reduce-motion .block.hinting { animation: none; }
 
 .reduce-motion .block,
 .reduce-motion .crown,

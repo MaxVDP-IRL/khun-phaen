@@ -9,8 +9,10 @@ The tray is the one in the photo: four columns, five rows, and a gap in the rail
 - Drag or swipe a block in a straight line. It slides into empty space and stops when it meets another block.
 - Each slide counts as one move. The big number is your count.
 - The star remembers the fewest moves on this phone.
-- The curved arrow steps back one slide. The round arrow starts the tray over.
-- The speaker stays quiet until you tap it. Then a slide ticks, and the escape gets a short cheer.
+- The curved arrow steps back one slide. The round arrow starts the tray over. The lightbulb shows one good next slide.
+- Hints are counted beside the move number. Starting over clears that count. Stepping back does not.
+- The star is the best game with no hints. The small lightbulb is the best game that used hints. A hinted win never replaces the star.
+- The speaker stays quiet until you tap it. Then a slide ticks, a hint chimes, and the escape gets a short cheer.
 - Khun Phaen is free when the big square sits in the gap. He slides out, and you can play again.
 
 ## The layout
