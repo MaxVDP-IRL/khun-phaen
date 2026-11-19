@@ -11,15 +11,17 @@
  * stopping on an empty cell. Blocks never overlap, turn a corner, or
  * leave the tray in the same gesture.
  *
- * Starting layout, read from the wooden puzzle (near edge at the bottom):
+ * Starting layout from the close crop of the wooden puzzle.
+ * The near edge, with the exit, is the bottom row:
  *
- *   o H H V
- *   V H H V
- *   V = = V
- *   o . . V
+ *   H H V .
+ *   H H V o
+ *   . V V V
+ *   o V V V
  *   = = o o
  *
- * o small square, V tall 1×2, = wide 1×2, H the 2×2 hero, . empty.
+ * H is the 2×2 hero (white dot), V a tall 1×2 (red dot),
+ * = the wide 1×2 (red dot), o a small square (blue dot), . empty.
  */
 
 export const COLS = 4;
@@ -34,12 +36,12 @@ export const EXIT_ROW = 3;
  */
 export function createInitialPieces() {
   return [
-    { id: "hero", role: "hero", w: 2, h: 2, col: 1, row: 0, dot: "red" },
-    { id: "s-white", role: "small", w: 1, h: 1, col: 0, row: 0, dot: "white" },
-    { id: "v-blue", role: "vert", w: 1, h: 2, col: 3, row: 0, dot: "blue" },
-    { id: "v-red-left", role: "vert", w: 1, h: 2, col: 0, row: 1, dot: "red" },
-    { id: "h-mid", role: "horiz", w: 2, h: 1, col: 1, row: 2, dot: "red" },
-    { id: "v-red-right", role: "vert", w: 1, h: 2, col: 3, row: 2, dot: "red" },
+    { id: "hero", role: "hero", w: 2, h: 2, col: 0, row: 0, dot: "white" },
+    { id: "v-a", role: "vert", w: 1, h: 2, col: 2, row: 0, dot: "red" },
+    { id: "s-blue-top", role: "small", w: 1, h: 1, col: 3, row: 1, dot: "blue" },
+    { id: "v-b", role: "vert", w: 1, h: 2, col: 1, row: 2, dot: "red" },
+    { id: "v-c", role: "vert", w: 1, h: 2, col: 2, row: 2, dot: "red" },
+    { id: "v-d", role: "vert", w: 1, h: 2, col: 3, row: 2, dot: "red" },
     { id: "s-blue-left", role: "small", w: 1, h: 1, col: 0, row: 3, dot: "blue" },
     { id: "h-front", role: "horiz", w: 2, h: 1, col: 0, row: 4, dot: "red" },
     { id: "s-blue-mid", role: "small", w: 1, h: 1, col: 2, row: 4, dot: "blue" },
